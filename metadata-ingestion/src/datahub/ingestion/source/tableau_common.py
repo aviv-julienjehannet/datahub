@@ -63,6 +63,7 @@ workbook_graphql_query = """
       projectName
       owner {
         username
+        email
       }
       description
       uri
@@ -105,6 +106,7 @@ sheet_graphql_query = """
         luid
         owner {
           username
+          email
         }
     }
     datasourceFields {
@@ -183,6 +185,7 @@ dashboard_graphql_query = """
         luid
         owner {
           username
+          email
         }
     }
 }
@@ -266,6 +269,7 @@ embedded_datasource_graphql_query = """
         luid
         owner {
           username
+          email
         }
     }
 }
@@ -402,6 +406,7 @@ published_datasource_graphql_query = """
     }
     owner {
       username
+      email
     }
     description
     uri
