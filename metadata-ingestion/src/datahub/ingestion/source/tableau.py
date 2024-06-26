@@ -304,11 +304,11 @@ class TableauConfig(
     )
     ingest_tags: Optional[bool] = Field(
         default=False,
-        description="Ingest Tags from source. This will override Tags entered from UI",
+        description="Ingest Tags from Tableau site. This will override Tags entered from UI",
     )
     ingest_owner: Optional[bool] = Field(
         default=False,
-        description="Ingest Owner from source. This will override Owner info entered from UI",
+        description="Ingest Owner from Tableau site. This will override Owner info entered from UI",
     )
     ingest_tables_external: bool = Field(
         default=False,
@@ -1814,7 +1814,6 @@ class TableauSource(StatefulIngestionSourceBase, TestableSource):
     def _enrich_database_tables_with_parsed_schemas(
         self, parsing_result: SqlParsingResult
     ) -> None:
-
         in_tables_schemas: Dict[
             str, Set[str]
         ] = transform_parsing_result_to_in_tables_schemas(parsing_result)
@@ -1949,14 +1948,6 @@ class TableauSource(StatefulIngestionSourceBase, TestableSource):
             aspects=[self.get_data_platform_instance()],
         )
 
-        # Tags
-        if datasource_info:
-            tags = self.get_tags(datasource_info)
-            if tags:
-                dataset_snapshot.aspects.append(
-                    builder.make_global_tag_aspect_with_tag_list(tags)
-                )
-
         # Browse path
         if browse_path and is_embedded_ds and workbook and workbook.get(c.NAME):
             browse_path = (
@@ -1970,15 +1961,11 @@ class TableauSource(StatefulIngestionSourceBase, TestableSource):
             dataset_snapshot.aspects.append(browse_paths)
 
         # Ownership
-        owner = (
-            self._get_ownership(datasource_info[c.OWNER][c.USERNAME])
-            if datasource_info
-            and datasource_info.get(c.OWNER)
-            and datasource_info[c.OWNER].get(c.USERNAME)
-            else None
-        )
-        if owner is not None:
-            dataset_snapshot.aspects.append(owner)
+        owner = datasource_info.get(c.OWNER, {}).get(c.USERNAME)
+        self.set_ownership(dataset_snapshot, owner)
+
+        # Tags
+        self.set_tags(dataset_snapshot, datasource_info)
 
         # Dataset properties
         dataset_props = DatasetPropertiesClass(
@@ -2377,16 +2364,11 @@ class TableauSource(StatefulIngestionSourceBase, TestableSource):
             )
 
         # Ownership
-        owner = self._get_ownership(creator)
-        if owner is not None:
-            chart_snapshot.aspects.append(owner)
+        self.set_ownership(chart_snapshot, creator)
 
-        #  Tags
-        tags = self.get_tags(sheet)
-        if tags:
-            chart_snapshot.aspects.append(
-                builder.make_global_tag_aspect_with_tag_list(tags)
-            )
+        # Tags
+        self.set_tags(chart_snapshot, sheet)
+
         yield self.get_metadata_change_event(chart_snapshot)
         if sheet_external_url is not None and self.config.ingest_embed_url is True:
             yield self.new_work_unit(
@@ -2587,9 +2569,22 @@ class TableauSource(StatefulIngestionSourceBase, TestableSource):
             tag_list_str = [
                 t[c.NAME] for t in tag_list if t is not None and t.get(c.NAME)
             ]
-
             return tag_list_str
         return None
+
+    def set_ownership(self, asset, owner):
+        if not asset:
+            return
+        owner = self._get_ownership(owner)
+        if owner is not None:
+            asset.aspects.append(owner)
+
+    def set_tags(self, asset, source):
+        if not asset:
+            return
+        tags = self.get_tags(source)
+        if tags:
+            asset.aspects.append(builder.make_global_tag_aspect_with_tag_list(tags))
 
     def emit_dashboard(
         self, dashboard: dict, workbook: Optional[Dict]
@@ -2640,12 +2635,6 @@ class TableauSource(StatefulIngestionSourceBase, TestableSource):
         )
         dashboard_snapshot.aspects.append(dashboard_info_class)
 
-        tags = self.get_tags(dashboard)
-        if tags:
-            dashboard_snapshot.aspects.append(
-                builder.make_global_tag_aspect_with_tag_list(tags)
-            )
-
         if self.config.extract_usage_stats:
             # dashboard_snapshot doesn't support the stat aspect as list element and hence need to emit MetadataWorkUnit
             wu = self._get_dashboard_stat_wu(dashboard, dashboard_urn)
@@ -2661,9 +2650,10 @@ class TableauSource(StatefulIngestionSourceBase, TestableSource):
             )
 
         # Ownership
-        owner = self._get_ownership(creator)
-        if owner is not None:
-            dashboard_snapshot.aspects.append(owner)
+        self.set_ownership(dashboard_snapshot, creator)
+
+        # Tags
+        self.set_tags(dashboard_snapshot, dashboard)
 
         yield self.get_metadata_change_event(dashboard_snapshot)
         # Yield embed MCP
@@ -2749,7 +2739,6 @@ class TableauSource(StatefulIngestionSourceBase, TestableSource):
                 ]
             )
             return ownership
-
         return None
 
     @classmethod
@@ -2826,5 +2815,4 @@ class TableauSource(StatefulIngestionSourceBase, TestableSource):
             )
 
     def get_report(self) -> TableauSourceReport:
-        return self.report
         return self.report
